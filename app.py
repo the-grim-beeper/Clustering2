@@ -1,4 +1,5 @@
-# app.py - Enhanced ArXiv Paper Clustering Web App
+# app.py - ArXiv Paper Clustering Web App
+# This complete app lets you cluster and analyze ArXiv papers using different methods
 import streamlit as st
 import feedparser
 import re
@@ -13,15 +14,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import nltk
 from nltk.corpus import stopwords
-import time
 import base64
-
-# Handle optional dependencies
-try:
-    import umap
-    UMAP_AVAILABLE = True
-except ImportError:
-    UMAP_AVAILABLE = False
 
 # Set page configuration
 st.set_page_config(
@@ -189,7 +182,8 @@ class ArxivClusteringApp:
             
             # Calculate distance to nearest core point for non-outliers
             core_samples_mask = np.zeros_like(clusterer.labels_, dtype=bool)
-            core_samples_mask[clusterer.core_sample_indices_] = True
+            if hasattr(clusterer, 'core_sample_indices_'):
+                core_samples_mask[clusterer.core_sample_indices_] = True
             
             similarities = []
             for i, row in self.papers_df.iterrows():
@@ -330,10 +324,12 @@ class ArxivClusteringApp:
             self.embedding = reducer.fit_transform(self.feature_matrix)
             
         elif method == "umap":
-            if UMAP_AVAILABLE:
+            # Fallback to PCA if UMAP is not available
+            try:
+                import umap
                 reducer = umap.UMAP(n_components=n_components, random_state=42)
                 self.embedding = reducer.fit_transform(self.feature_matrix.toarray())
-            else:
+            except ImportError:
                 st.warning("UMAP is not available. Please install it with 'pip install umap-learn'. Falling back to PCA.")
                 reducer = PCA(n_components=n_components)
                 self.embedding = reducer.fit_transform(self.feature_matrix.toarray())
@@ -374,7 +370,6 @@ class ArxivClusteringApp:
                 'hover_text': False
             },
             custom_data=['id', 'link'],
-            color_continuous_scale=px.colors.qualitative.G10,
             title='ArXiv Papers Clustering'
         )
         
@@ -479,6 +474,9 @@ def main():
     This app fetches papers from ArXiv RSS feeds, clusters them based on their content similarity,
     and identifies unusual papers (outliers) that may be worth exploring further.
     """)
+    
+    # Add a brief instruction message
+    st.info("👈 To get started, select an ArXiv category from the sidebar and click 'Fetch and Analyze Papers'")
     
     # Create tabs
     tab1, tab2, tab3 = st.tabs(["📊 Analyze Papers", "ℹ️ About", "❓ Help"])
@@ -674,7 +672,7 @@ def main():
                 st.error(f"An error occurred: {str(e)}")
         
         # Display results if available
-        if st.session_state.results:
+        if hasattr(st.session_state, 'results') and st.session_state.results:
             app = st.session_state.app
             
             # Display visualization
@@ -747,3 +745,10 @@ def main():
                         st.markdown("**Top categories:**")
                         for cat, count in top_categories.items():
                             st.markdown(f"- {cat}: {count} papers")
+                    
+                    # Show papers in this cluster
+                    st.markdown("**Papers in this cluster:**")
+                    
+                    for _, paper in group.iterrows():
+                        title_prefix = "🌟 " if 'is_outlier' in paper and paper['is_outlier'] else ""
+                        st.markdown(f"{title_prefix}[{paper['title']}]({paper['link']})")
